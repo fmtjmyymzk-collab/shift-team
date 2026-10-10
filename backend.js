@@ -145,14 +145,28 @@
           return s.docs.map(function(d){ return stripReq(d.data()); });
         });
       },
+
+      /* シフト表。kind = 'drafts'（店長だけが見る下書き）/ 'schedules'（スタッフに公開した表） */
+      putPlan: function(id, ym, kind, p){
+        var data = {ym:ym, cells:clone(p.cells||{}), names:clone(p.names||{}), updatedAt:TS()};
+        return sref(id).collection(kind).doc(ym).set(data).then(function(){ return {updatedAt: Date.now()}; });
+      },
+      getPlan: function(id, ym, kind){
+        return sref(id).collection(kind).doc(ym).get().then(function(s){
+          if(!s.exists) return null;
+          var d = s.data(); return {ym:d.ym, cells:d.cells||{}, names:d.names||{}, updatedAt:ms(d.updatedAt)};
+        }, function(){ return null; });
+      },
       errMsg: errMsg
     };
   }
 
   /* ================= デモ（この端末の中だけ） ================= */
   function makeDemo(){
-    var K = 'shiftDemo.v1';
-    var NAMES = ['田中','鈴木','佐藤','高橋','伊藤','グエン','リー','ラナ'];
+    var K = 'shiftDemo.v2';
+    var NAMES = ['田中','鈴木','佐藤','高橋','伊藤','グエン','リー','ラナ','渡辺','山本','中村','小林'];
+    var WEEKLY = ['5','4','5','3','5','3','5','4','4','4','4','3'];
+    var CONSEC = ['5','3','5','4','7〜','3','5','4','5','3','4','5'];
     function load(){
       try{ var s = JSON.parse(localStorage.getItem(K)); if(s && s.stores) return s; }catch(e){}
       return {users:{}, stores:{}, members:{}, requests:{}, session:null};
@@ -160,7 +174,7 @@
     function save(d){ try{ localStorage.setItem(K, JSON.stringify(d)); }catch(e){} }
     function ensureSample(d){
       if(d.stores[SAMPLE]) return;
-      d.stores[SAMPLE] = {id:SAMPLE, name:'デモ店（サンプル）', managerUid:'demo-manager', shifts:clone(DEFAULT_SHIFTS), required:clone(DEFAULT_REQUIRED), deadlineDay:20, sample:true};
+      d.stores[SAMPLE] = {id:SAMPLE, name:'デモ店（サンプル）', managerUid:'demo-manager', shifts:{A:{label:'朝',time:'7〜12時'},B:{label:'昼',time:'11〜16時'},C:{label:'夕',time:'16〜21時'},D:{label:'夜',time:'21〜翌2時'}}, required:{A:1,B:2,C:2,D:1}, deadlineDay:20, sample:true};
       d.members[SAMPLE] = {};
       NAMES.forEach(function(n,i){ d.members[SAMPLE]['demo-'+(i+1)] = {name:n, role:'staff', joinedAt:Date.now()-86400000*(30-i)}; });
       d.requests[SAMPLE] = {};
@@ -172,7 +186,7 @@
       Object.keys(d.members[id] || {}).forEach(function(uid){
         if(uid.indexOf('demo-') !== 0) return;
         var idx = +uid.slice(5), k = ym+'_'+uid;
-        if(reqs[k] || idx >= 7) return;                      // 7・8番目の人は未提出のまま
+        if(reqs[k] || idx >= 11) return;                     // 11・12番目の人は未提出のまま
         var r = rng(y*100 + m + idx*977), days = {}, dd;
         for(dd=1; dd<=n; dd++){
           var w = new Date(y, m-1, dd).getDay(), p = r(), s, off = (idx%7 === w) ? 0.85 : 0.18;
@@ -185,7 +199,7 @@
           }
           days[dd] = {s:s, sh:sh, n:''};
         }
-        reqs[k] = {uid:uid, ym:ym, name:d.members[id][uid].name, days:days, gen:{weekly:'3'}, note:'', updatedAt:Date.now()-3600000*(idx*5+3)};
+        reqs[k] = {uid:uid, ym:ym, name:d.members[id][uid].name, days:days, gen:{weekly:WEEKLY[idx-1], consec:CONSEC[idx-1]}, note:'', updatedAt:Date.now()-3600000*(idx*5+3)};
       });
     }
     function sess(d){ return d.session; }
@@ -264,6 +278,15 @@
       getMyRequest: function(id, ym){
         var d = load(), s = sess(d); if(!s) return ok(null);
         var r = (d.requests[id] || {})[ym+'_'+s.uid]; return ok(r ? clone(r) : null);
+      },
+      putPlan: function(id, ym, kind, p){
+        var d = load(), at = Date.now();
+        d[kind] = d[kind] || {}; d[kind][id] = d[kind][id] || {};
+        d[kind][id][ym] = {ym:ym, cells:clone(p.cells||{}), names:clone(p.names||{}), updatedAt:at}; save(d);
+        return ok({updatedAt:at});
+      },
+      getPlan: function(id, ym, kind){
+        var d = load(), r = ((d[kind]||{})[id]||{})[ym]; return ok(r ? clone(r) : null);
       },
       listRequests: function(id, ym){
         var d = load();

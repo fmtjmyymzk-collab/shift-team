@@ -1,6 +1,6 @@
 /* オフラインでも開けるようにする簡単なキャッシュ */
-var CACHE = 'shift-team-v1';
-var FILES = ['./', './index.html', './team.css', './team.js', './backend.js', './config.js', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+var CACHE = 'shift-team-v2';
+var FILES = ['./', './index.html', './team.css', './team.js', './backend.js', './planner.js', './config.js', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(FILES); }));

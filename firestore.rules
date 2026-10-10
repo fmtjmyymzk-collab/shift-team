@@ -4,6 +4,7 @@ rules_version = '2';
 //  店長   : 自分の店の設定・全員の希望・メンバーを見られる／直せる
 //  スタッフ: 自分の希望だけ読み書きできる（他の人の希望は見えない）
 //  店コードを知っている人だけが、その店のスタッフとして参加できる
+//  シフト表 : 下書きは店長だけ。公開した表は、店のスタッフ全員が見られる
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -44,6 +45,16 @@ service cloud.firestore {
         allow update: if signedIn() && request.auth.uid == uid
                       && request.resource.data.role == resource.data.role;
         allow delete: if isManager(storeId) || (signedIn() && request.auth.uid == uid);
+      }
+
+      // シフトの下書き：店長だけ
+      match /drafts/{ym} {
+        allow read, write: if isManager(storeId);
+      }
+      // 公開したシフト表：店のスタッフ全員が見られる。書けるのは店長だけ
+      match /schedules/{ym} {
+        allow read: if isManager(storeId) || isMember(storeId);
+        allow write: if isManager(storeId);
       }
 
       match /requests/{reqId} {

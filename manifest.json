@@ -1,7 +1,7 @@
 {
-  "name": "国際ビルシフトチーム",
+  "name": "シフトチーム",
   "short_name": "シフトチーム",
-  "description": "お店のスタッフの出勤希望を集めて、店長が集計できるアプリ",
+  "description": "スタッフの出勤希望を集めて、シフトを自動で組んで配るアプリ",
   "lang": "ja",
   "id": "./shift-team",
   "start_url": "./index.html",

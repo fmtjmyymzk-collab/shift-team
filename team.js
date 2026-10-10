@@ -10,8 +10,11 @@
   var S = {backend:'', role:'', storeId:''};      // この端末の状態（保存する）
   var store = null, members = [], requests = [], myReq = null;
   var lastKey = '', armed = false, armT = null, busy = false;
-  var mYm = null, mTab = 'sum', onlyShort = false, V = {name:'', d:{}};
+  var mYm = null, mTab = 'plan', onlyShort = false, V = {name:'', d:{}};
   var pending = {}, saveT = null, armedDel = '';
+  var SP = window.ShiftPlanner;
+  var plan = null, draft = null, pub = null, planHoles = false, armedReplan = false, planSaveT = null, sheetCell = null;
+  var myPlan = null, myPlanKey = '';
 
   /* ---------- 道具 ---------- */
   function $(id){ return document.getElementById(id); }
@@ -62,6 +65,9 @@
     var mg = document.createElement('div'); mg.id = 'mgr'; mg.className = 't-mgr'; mg.hidden = true; document.body.appendChild(mg);
     var card = document.createElement('div'); card.id = 'tSubmit'; card.className = 'card no-print t-submit'; card.hidden = true;
     var po = $('p-out'); po.insertBefore(card, po.firstChild);
+    var mine = document.createElement('div'); mine.id = 'tMine'; mine.className = 'card t-mine'; mine.hidden = true;
+    var pd = $('p-days'); pd.insertBefore(mine, pd.firstChild);
+    mine.addEventListener('click', function(e){ if(e.target.closest('[data-act="allPlan"]')) openAllPlan(); });
     var dock = document.createElement('button'); dock.id = 'tSubmitDock'; dock.className = 'btn primary'; dock.hidden = true;
     var row = $('outDock').querySelector('.in'); row.insertBefore(dock, row.firstChild);
 
@@ -76,7 +82,7 @@
     document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeSheet(); });
   }
   function openSheet(html){ $('tSheet').firstChild.innerHTML = html; $('tSheet').hidden = false; }
-  function closeSheet(){ $('tSheet').hidden = true; armedDel = ''; }
+  function closeSheet(){ $('tSheet').hidden = true; armedDel = ''; sheetCell = null; }
 
   /* ================= 参加・ログインの画面 ================= */
   function showView(name, d){
@@ -91,12 +97,12 @@
   var VIEWS = {
     choose: function(){
       var note = BK.firebase ? '' : '<p class="t-note">いまは<b>デモ版</b>です（サーバーに未接続）。サンプルの店で、操作を試せます。</p>';
-      return '<h2>お店とつなぐ</h2><p class="lead">希望を店長にまとめて届けられます。</p>'+note
+      return '<h2>お店とつなぐ</h2><p class="lead">希望を出すのも、シフトを組むのも、配るのも、ここだけで。</p>'+note
         + '<div class="t-choice">'
         + '<button class="main" data-act="goJoin"><b>スタッフとして参加</b><span>店長から聞いた店コードを入力します</span></button>'
-        + '<button data-act="goMgr"><b>店長として使う</b><span>全員の希望の集計と、提出状況を見ます</span></button>'
+        + '<button data-act="goMgr"><b>店長として使う</b><span>集まった希望から、シフトを自動で組んで配ります</span></button>'
         + '<button data-act="solo"><b>ひとりで使う</b><span>これまで通り、LINEに画像や文章で送ります</span></button>'
-        + '</div><button class="link" data-act="demo">デモを試す（サンプルの店）</button>';
+        + '</div><button class="link" data-act="demo">店長画面のデモを試す（12人のサンプル店）</button>';
     },
     join: function(d){
       return '<button class="link t-back" data-act="goChoose">‹ もどる</button><h2>スタッフとして参加</h2>'
@@ -193,7 +199,40 @@
   function applyStaff(){
     document.body.classList.add('team-staff'); document.body.classList.remove('team-mgr');
     C.setShiftLabels(store.shifts);
-    myReq = null; lastKey = ''; fetchMyReq(); renderStaff();
+    C.setBrand(store.name);
+    myReq = null; lastKey = ''; fetchMyReq(); fetchMyPlan(); renderStaff();
+  }
+  /* 店長が公開したシフト表を読む */
+  function fetchMyPlan(){
+    if(S.role !== 'staff' || !store) return;
+    var key = C.ymKey(); myPlanKey = key; myPlan = null; renderMine();
+    B().getPlan(store.id, key, 'schedules').then(function(p){
+      if(C.ymKey() !== key) return;
+      myPlan = p; renderMine();
+    });
+  }
+  function renderMine(){
+    var box = $('tMine');
+    if(S.role !== 'staff' || !store || !myPlan){ box.hidden = true; return; }
+    var u = B().user(), me = u && u.uid, ym = C.getYm(), n = dimOf(ym), rows = [], d;
+    for(d=1; d<=n; d++){
+      SH.forEach(function(k){
+        if((((myPlan.cells||{})[d]||{})[k]||[]).indexOf(me) < 0) return;
+        var w = new Date(ym.y, ym.m-1, d).getDay(), hol = C.holidayName(ym.y, ym.m, d);
+        rows.push('<li class="'+(w===0||hol?'sun':(w===6?'sat':''))+'"><b>'+d+'</b><span class="wd">'+WD[w]+'</span><span class="k">'+k+'</span><span class="nm">'+esc(shiftName(k))+'</span><span class="tm">'+esc(shiftTime(k))+'</span></li>');
+      });
+    }
+    box.innerHTML = '<div class="hd"><h2>'+ym.m+'月の確定シフト</h2><span class="st st-saved">店長が公開</span></div>'
+      + (rows.length ? '<p class="m-help" style="margin:0 0 8px">あなたは <b>'+rows.length+'回</b> です（'+fmtAt(myPlan.updatedAt)+' 公開）</p><ul>'+rows.join('')+'</ul>'
+                     : '<p class="m-help" style="margin:0 0 8px">今月、あなたはシフトに入っていません。</p>')
+      + '<button class="link" data-act="allPlan">全員のシフトを見る</button>';
+    box.hidden = false;
+  }
+  function openAllPlan(){
+    var p = myPlan; if(!p) return;
+    var ym = C.getYm();
+    openSheet('<h3>'+ym.m+'月のシフト</h3><p class="sub">'+esc(store.name)+'</p><pre class="text">'+esc(planText(p.cells, p.names || {}, ym, store.name))+'</pre>'
+      + '<div class="actions"><button class="btn primary" data-act="closeSheet">閉じる</button></div>');
   }
   function hasLocalData(){ var m = C.getMonth(), k; for(k in m.days){ if(m.days[k] && m.days[k].s) return true; } return false; }
   function fetchMyReq(){
@@ -261,7 +300,7 @@
     var id = store && store.id;
     (id ? B().leaveStore(id) : Promise.resolve()).catch(function(){}).then(function(){
       S = {backend:'', role:'', storeId:''}; lsDel(KEY); store = null; myReq = null; armed = false;
-      document.body.classList.remove('team-staff'); C.setShiftLabels(null); closeSheet(); renderStaff(); toast('店から抜けました');
+      document.body.classList.remove('team-staff'); C.setShiftLabels(null); C.setBrand(''); myPlan = null; renderMine(); closeSheet(); renderStaff(); toast('店から抜けました');
     });
   }
 
@@ -271,7 +310,7 @@
     $('teamBar').hidden = true; $('tSubmit').hidden = true; $('tSubmitDock').hidden = true;
     $('mgr').hidden = false;
     if(!mYm){ var y = C.getYm(); mYm = {y:y.y, m:y.m}; }
-    mTab = 'sum'; loadMgr();
+    mTab = 'plan'; loadMgr();
   }
   function leaveManagerUI(){
     document.body.classList.remove('team-mgr'); $('mgr').hidden = true; $('teamBar').hidden = false;
@@ -280,8 +319,8 @@
   function loadMgr(){
     renderMgr(true);
     var ym = ymStr(mYm);
-    return Promise.all([B().listMembers(store.id), B().listRequests(store.id, ym)]).then(function(r){
-      members = r[0]; requests = r[1]; renderMgr();
+    return Promise.all([B().listMembers(store.id), B().listRequests(store.id, ym), B().getPlan(store.id, ym, 'drafts'), B().getPlan(store.id, ym, 'schedules')]).then(function(r){
+      members = r[0]; requests = r[1]; draft = r[2]; pub = r[3]; setupPlan(); renderMgr();
     }).catch(function(e){ $('mgr').querySelector('.m-main').innerHTML = '<div class="m-empty">読み込めませんでした。<br>'+esc(B().errMsg(e))+'<br><br><button class="btn" data-act="reload">もう一度読み込む</button></div>'; });
   }
 
@@ -312,9 +351,185 @@
     return {w:w, hol:hol, cls:(w===6?'sat':'')+(w===0?' sun':'')+(hol?' hol':''), html:d+'<span>'+WD[w]+(hol?' 祝':'')+'</span>'};
   }
 
+  /* ================= シフト表（自動で組む・手直し・公開） ================= */
+  function planInput(){
+    var A = aggregate();
+    return {y:mYm.y, m:mYm.m, required:store.required || {}, requests:requests.filter(function(r){ return A.byUid[r.uid]; }).map(function(r){
+      return {uid:r.uid, name:nameOf(A, r.uid), days:r.days || {}, gen:r.gen || {}};
+    })};
+  }
+  function cleanCells(cells){
+    var ok = {}, out = {}, n = dimOf(mYm), d;
+    planInput().requests.forEach(function(r){ ok[r.uid] = true; });
+    for(d=1; d<=n; d++){
+      out[d] = {};
+      SH.forEach(function(k){ out[d][k] = (((cells||{})[d]||{})[k]||[]).filter(function(u){ return ok[u]; }); });
+    }
+    return out;
+  }
+  function setupPlan(){
+    armedReplan = false;
+    var base = draft || pub;
+    if(base) plan = {cells:cleanCells(base.cells), savedAt:base.updatedAt || 0, edited:true};
+    else if(planInput().requests.length) plan = {cells:SP.plan(planInput()), savedAt:0, edited:false};
+    else plan = null;
+  }
+  function planNames(){ var o = {}; planInput().requests.forEach(function(r){ o[r.uid] = r.name; }); return o; }
+  function pubState(){
+    if(!pub) return 'none';
+    return canon(cleanCells(pub.cells)) === canon(plan.cells) ? 'live' : 'changed';
+  }
+  function savePlanDraft(){
+    var id = store.id, ym = ymStr(mYm), cells = JSON.parse(JSON.stringify(plan.cells)), names = planNames();
+    clearTimeout(planSaveT);
+    planSaveT = setTimeout(function(){
+      B().putPlan(id, ym, 'drafts', {cells:cells, names:names}).then(function(r){
+        if(plan && ymStr(mYm) === ym){ plan.savedAt = r.updatedAt; draft = {cells:cells, names:names, updatedAt:r.updatedAt}; }
+      }, function(e){ toast(B().errMsg(e)); });
+    }, 600);
+  }
+  function wishOf(uid, d, k){
+    var r = requests.filter(function(q){ return q.uid === uid; })[0], x = r && r.days && r.days[d];
+    if(!x || (x.s !== 'o' && x.s !== 't')) return '';
+    if(x.sh && x.sh.length && x.sh.indexOf(k) < 0) return '';
+    return x.s;
+  }
+  function shortName(n){ n = String(n||'').trim().split(/[\s　]+/)[0]; return n.length > 4 ? n.slice(0,4) : n; }
+
+  function bodyPlan(){
+    if(!members.length) return emptyNoMember();
+    if(!plan) return '<div class="card m-empty">まだ誰も提出していません。<br>希望が集まると、ここでシフトを自動で組めます。<br><br><button class="btn primary" data-act="mtab" data-t="sub">提出状況を見る</button></div>';
+    var inp = planInput(), res = SP.evaluate(inp, plan.cells), names = planNames(), A = aggregate();
+    var naive = SP.naiveShort(inp), unsub = members.filter(function(m){ return !A.subm[m.uid]; }).length;
+    var stale = plan.savedAt ? requests.filter(function(r){ return r.updatedAt > plan.savedAt; }).length : 0;
+    var ps = pubState(), rows = '', d;
+    for(d=1; d<=res.n; d++){
+      var hole = false, tds = '';
+      SH.forEach(function(k){
+        var s = res.slots[d][k];
+        if(s.miss) hole = true;
+        var inner = s.list.map(function(u){ return '<span class="'+(wishOf(u, d, k) === 't' ? 'tri' : '')+'">'+esc(shortName(names[u]))+'</span>'; }).join('')
+          + (s.miss ? '<em>あと'+s.miss+'人</em>' : '') + (!s.need && !s.list.length ? '<span class="none">－</span>' : '');
+        tds += '<td><button class="p-cell '+s.st+'" data-act="pcell" data-d="'+d+'" data-k="'+k+'" aria-label="'+d+'日 '+esc(shiftName(k))+' '+s.list.length+'人 必要'+s.need+'人">'+inner+'</button></td>';
+      });
+      if(planHoles && !hole) continue;
+      var dl = dayLabel(d);
+      rows += '<tr class="'+dl.cls+'"><td class="d">'+dl.html+'</td>'+tds+'</tr>';
+    }
+    var th = SH.map(function(k){ return '<th>'+k+' '+esc(shiftName(k))+'<small>'+(esc(shiftTime(k)) || '')+'</small><small>必要'+((store.required||{})[k]||0)+'人</small></th>'; }).join('');
+
+    var head = '';
+    if(ps === 'live') head = '<div class="p-state live"><b>公開中</b><span>'+fmtAt(pub.updatedAt)+' にスタッフへ公開しました</span></div>';
+    else if(ps === 'changed') head = '<div class="p-state changed"><b>公開後に変更あり</b><span>スタッフには、まだ前の表が見えています</span></div>';
+    else head = '<div class="p-state none"><b>下書き</b><span>確認したら「スタッフに公開」を押してください</span></div>';
+
+    var insight = (res.short > naive)
+      ? '<div class="p-insight"><b>希望の数だけで見ると、足りないのは'+naive+'コマ。</b>でも1人1日1コマ・週の回数・連勤の上限を守って実際に組むと、<b>'+res.short+'コマ（'+res.shortSeats+'人分）</b>空きます。赤いコマが、本当に人を探すべき所です。</div>'
+      : '';
+    var issues = res.issues.length ? '<div class="card p-issues"><h2>確認してください（'+res.issues.length+'件）</h2><ul>'+res.issues.map(function(it){
+        return '<li><b>'+esc(names[it.uid] || '')+'</b> '+(it.d ? mYm.m+'/'+it.d+' ' : '')+esc(it.t)+'</li>';
+      }).join('')+'</ul></div>' : '';
+    var people = res.people.slice().sort(function(a, b){ return a.name.localeCompare(b.name, 'ja'); }).map(function(p){
+      var tg = p.target, pct = tg ? Math.min(100, Math.round(p.count / tg * 100)) : 0;
+      return '<tr><td class="nm">'+esc(p.name)+'</td><td class="c"><b>'+p.count+'</b>回</td><td class="g">'+(tg ? '<div class="p-trk"><i style="width:'+pct+'%"></i></div><small>目安 '+tg+'回</small>' : '<small>目安なし（○ '+p.avail+'日）</small>')+'</td></tr>';
+    }).join('');
+
+    return head
+      + '<div class="m-sum"><span class="m-pill '+(res.short ? 'ng' : 'ok')+'">'+(res.short ? '足りない '+res.short+'コマ' : '全部埋まりました')+'</span>'
+      + (res.tri ? '<span class="m-pill warn">△の人で埋めた '+res.tri+'人</span>' : '')
+      + '<span class="m-pill ok">埋まった '+res.filled+'/'+res.seats+'人</span></div>'
+      + insight
+      + (stale ? '<div class="p-warn">'+stale+'人が、このシフトを組んだあとに希望を出し直しています。<button class="link" data-act="replan">組み直す</button></div>' : '')
+      + (unsub ? '<p class="m-help" style="margin:0 0 10px">未提出の'+unsub+'人は、まだ入っていません。</p>' : '')
+      + '<div class="m-tools"><label><input type="checkbox" data-act="holes" '+(planHoles?'checked':'')+'>穴のある日だけ表示</label>'
+      + '<span class="lg"><i style="background:var(--tri-bg)"></i>△の人が入っている</span><span class="lg"><i style="background:var(--ng-bg)"></i>足りない</span></div>'
+      + '<p class="m-help" style="margin:0 0 10px">コマをタップすると、入れる人の候補から入れ替えられます。</p>'
+      + '<div class="m-mx-wrap"><table class="m-mx p-mx"><thead><tr><th>日</th>'+th+'</tr></thead><tbody>'+(rows || '<tr><td colspan="5" class="m-empty">穴のある日はありません</td></tr>')+'</tbody></table></div>'
+      + issues
+      + '<div class="card p-people"><h2>一人ずつの回数</h2><p class="m-help" style="margin:0 0 8px">目安は、本人の「週の勤務回数」から計算しています。</p><table>'+people+'</table></div>'
+      + '<div class="dock m-dock"><div class="in outrow">'
+      + '<button class="btn'+(armedReplan ? ' armed' : '')+'" data-act="replan">'+(armedReplan ? '手直しを消して組む' : '自動で組む')+'</button>'
+      + (ps === 'live' ? '<button class="btn line" data-act="sendPlan">LINEで共有</button>'
+                       : '<button class="btn primary" data-act="publish">スタッフに公開</button>')
+      + '</div></div>';
+  }
+
+  function replan(){
+    if(plan && plan.edited && !armedReplan){
+      armedReplan = true; renderMgr(); toast('手直しした所も組み直します。よければ、もう一度押してください');
+      clearTimeout(replan._t); replan._t = setTimeout(function(){ armedReplan = false; if(mTab === 'plan') renderMgr(); }, 6000);
+      return;
+    }
+    armedReplan = false;
+    var t0 = Date.now(), cells = SP.plan(planInput()), ms = Date.now() - t0;
+    plan = {cells:cells, savedAt:plan ? plan.savedAt : 0, edited:false};
+    savePlanDraft(); renderMgr();
+    var res = SP.evaluate(planInput(), cells);
+    toast(ms < 1000 ? '組みました（'+(ms/1000).toFixed(2)+'秒）'+(res.short ? '　足りない '+res.short+'コマ' : '　全部埋まりました') : '組みました');
+  }
+  function publishPlan(){
+    if(!plan || busy) return;
+    var cells = JSON.parse(JSON.stringify(plan.cells)), names = planNames(), id = store.id, ym = ymStr(mYm);
+    busy = true;
+    B().putPlan(id, ym, 'schedules', {cells:cells, names:names}).then(function(r){
+      busy = false; pub = {cells:cells, names:names, updatedAt:r.updatedAt}; savePlanDraft();
+      renderMgr(); toast('スタッフに公開しました。LINEでも知らせましょう');
+    }, function(e){ busy = false; toast(B().errMsg(e)); });
+  }
+  function planText(cells, names, ym, stName){
+    var n = dimOf(ym), L = ['【'+ym.m+'月のシフト】'+stName, ''], d, req = (store && store.required) || {};
+    for(d=1; d<=n; d++){
+      var w = new Date(ym.y, ym.m-1, d).getDay(), parts = [];
+      SH.forEach(function(k){
+        var list = ((cells[d]||{})[k]||[]), need = req[k] || 0;
+        if(!need && !list.length) return;
+        var miss = Math.max(0, need - list.length);
+        parts.push(shiftName(k)+':'+(list.length ? list.map(function(u){ return shortName(names[u]); }).join('・') : '')+(miss ? '（あと'+miss+'人）' : ''));
+      });
+      L.push(d+'('+WD[w]+') '+parts.join(' '));
+    }
+    var times = SH.filter(function(k){ return shiftTime(k); }).map(function(k){ return shiftName(k)+' '+shiftTime(k); });
+    if(times.length){ L.push(''); L.push(times.join(' / ')); }
+    L.push(''); L.push('自分のシフトはアプリでも見られます'); L.push(appUrl());
+    return L.join('\n');
+  }
+  function shareText(t, title){
+    if(navigator.share){ navigator.share({title:title, text:t}).catch(function(e){ if(!e || e.name !== 'AbortError') copyText(t); }); }
+    else copyText(t);
+  }
+
+  /* コマの手直し */
+  function openPlanCell(d, k){
+    sheetCell = {d:d, k:k};
+    var inp = planInput(), res = SP.evaluate(inp, plan.cells), s = res.slots[d][k], names = planNames(), dl = dayLabel(d);
+    var counts = {}; res.people.forEach(function(p){ counts[p.uid] = p; });
+    var inList = s.list.map(function(u){
+      var w = wishOf(u, d, k), c = counts[u] || {};
+      return '<div class="p-row"><span class="w '+(w||'x')+'">'+({o:'○',t:'△'}[w] || '!')+'</span><div class="nm">'+esc(names[u])+'<small>今月 '+(c.count||0)+'回'+(c.target ? '／目安 '+c.target+'回' : '')+'</small></div><button class="btn sm" data-act="pRemove" data-u="'+esc(u)+'">外す</button></div>';
+    }).join('') || '<p class="t-none">まだ誰も入っていません</p>';
+    var cands = SP.candidates(inp, plan.cells, d, k).map(function(c){
+      var info = c.busy ? esc(shiftName(c.busy))+'に入っています' : (!c.fits ? '週の回数か連勤の上限を超えます' : '今月 '+c.count+'回'+(c.target ? '／目安 '+c.target+'回' : ''));
+      return '<div class="p-row'+(c.fits || c.busy ? '' : ' over')+'"><span class="w '+c.wish+'">'+(c.wish === 'o' ? '○' : '△')+'</span><div class="nm">'+esc(c.name)+'<small>'+info+'</small></div><button class="btn sm'+(c.fits ? ' primary' : '')+'" data-act="pAdd" data-u="'+esc(c.uid)+'">'+(c.busy ? 'ここへ移す' : '入れる')+'</button></div>';
+    }).join('') || '<p class="t-none">この日のこのコマに入れる人はいません</p>';
+    openSheet('<h3>'+mYm.m+'月'+d+'日（'+WD[dl.w]+'）'+(dl.hol ? ' '+esc(dl.hol) : '')+'</h3>'
+      + '<p class="sub">'+k+' '+esc(shiftName(k))+(shiftTime(k) ? '（'+esc(shiftTime(k))+'）' : '')+'　必要 '+s.need+'人</p>'
+      + '<div class="t-grp"><div class="gl">入っている人（'+s.list.length+'/'+s.need+'）</div>'+inList+'</div>'
+      + '<div class="t-grp"><div class="gl">入れる人</div>'+cands+'</div>'
+      + '<div class="actions"><button class="btn primary" data-act="closeSheet">完了</button></div>');
+  }
+  function editCell(act, uid){
+    var d = sheetCell.d, k = sheetCell.k, day = plan.cells[d];
+    if(act === 'pRemove'){ var i = day[k].indexOf(uid); if(i >= 0) day[k].splice(i, 1); }
+    else {
+      SH.forEach(function(kk){ var j = day[kk].indexOf(uid); if(j >= 0) day[kk].splice(j, 1); });
+      day[k].push(uid);
+    }
+    plan.edited = true; savePlanDraft(); renderMgr(); openPlanCell(d, k);
+  }
+
   function renderMgr(loading){
     var ym = mYm;
-    var tabs = [['sum','集計'],['sub','提出状況'],['set','設定']].map(function(t){
+    var tabs = [['plan','シフト表'],['sum','希望の集計'],['sub','提出状況'],['set','設定']].map(function(t){
       return '<button data-act="mtab" data-t="'+t[0]+'" aria-selected="'+(mTab===t[0])+'">'+t[1]+'</button>';
     }).join('');
     var head = '<header class="m-top"><div class="in"><div class="m-bar"><div class="m-store"><small>店長画面'+(isDemo()?'（デモ）':'')+'</small><b>'+esc(store.name)+'</b></div>'
@@ -322,11 +537,12 @@
       + '<div class="steps" role="tablist">'+tabs+'</div></div></header>';
     var body;
     if(loading) body = '<div class="m-empty">読み込み中…</div>';
+    else if(mTab === 'plan') body = bodyPlan();
     else if(mTab === 'sum') body = bodySum();
     else if(mTab === 'sub') body = bodySub();
     else body = bodySet();
     var keep = loading ? 0 : window.scrollY;
-    $('mgr').innerHTML = head + '<main class="m-main">'+body+'</main>';
+    $('mgr').innerHTML = head + '<main class="m-main'+(mTab === 'plan' && !loading && plan ? ' has-dock' : '')+'">'+body+'</main>';
     if(!loading && mTab !== 'set') window.scrollTo(0, keep);
   }
 
@@ -347,7 +563,8 @@
     }
     var th = SH.map(function(k){ return '<th>'+k+' '+esc(shiftName(k))+'<small>'+(esc(shiftTime(k)) || '必要'+(req[k]||0)+'人')+'</small></th>'; }).join('');
     var submitted = Object.keys(A.subm).length;
-    return '<div class="m-sum"><span class="m-pill ng">足りない '+ng+'コマ</span><span class="m-pill warn">△を入れれば足りる '+warn+'コマ</span><span class="m-pill ok">足りている '+ok+'コマ</span></div>'
+    return '<p class="p-warn" style="margin:0 0 10px">ここは希望を出した人数をそのまま数えた表です（1人を何コマにも数えます）。実際に足りるかは「シフト表」で確認してください。</p>'
+      + '<div class="m-sum"><span class="m-pill ng">候補が足りない '+ng+'コマ</span><span class="m-pill warn">△を入れれば候補が足りる '+warn+'コマ</span><span class="m-pill ok">候補が足りている '+ok+'コマ</span></div>'
       + '<div class="m-tools"><label><input type="checkbox" data-act="short" '+(onlyShort?'checked':'')+'>足りない日だけ表示</label>'
       + '<span>提出 '+submitted+'/'+members.length+'人</span>'
       + '<span class="lg"><i style="background:var(--ok-bg)"></i>足りる</span><span class="lg"><i style="background:var(--tri-bg)"></i>△込みで足りる</span><span class="lg"><i style="background:var(--ng-bg)"></i>不足</span></div>'
@@ -427,6 +644,11 @@
       loadMgr();
     }
     else if(a === 'short'){ onlyShort = b.checked; renderMgr(); }
+    else if(a === 'holes'){ planHoles = b.checked; renderMgr(); }
+    else if(a === 'pcell') openPlanCell(+b.dataset.d, b.dataset.k);
+    else if(a === 'replan') replan();
+    else if(a === 'publish') publishPlan();
+    else if(a === 'sendPlan') shareText(planText(plan.cells, planNames(), mYm, store.name), mYm.m+'月のシフト');
     else if(a === 'cell') openCell(+b.dataset.d, b.dataset.k);
     else if(a === 'person') openPerson(b.dataset.u);
     else if(a === 'copyCode') copyText(U.fmtCode(store.id));
@@ -501,6 +723,8 @@
     var b = e.target.closest('[data-act]'); if(!b) return;
     var a = b.dataset.act;
     if(a === 'closeSheet') closeSheet();
+    else if(a === 'pAdd' || a === 'pRemove'){ if(sheetCell && plan) editCell(a, b.dataset.u); }
+    else if(a === 'allPlan') openAllPlan();
     else if(a === 'leave'){
       if(armedDel === 'leave') leaveStore(); else { armedDel = 'leave'; b.textContent = '本当に抜ける'; b.classList.add('armed'); }
     }
@@ -517,7 +741,7 @@
     injectUI(); loadS();
     C.onChange(function(){
       if(S.role !== 'staff' || !store) return;
-      if(C.ymKey() !== lastKey) fetchMyReq(); else renderStaff();
+      if(C.ymKey() !== lastKey){ fetchMyReq(); fetchMyPlan(); } else renderStaff();
     });
     var q = ''; try{ q = new URLSearchParams(location.search).get('code') || ''; }catch(e){}
     if(S.role === 'staff'){

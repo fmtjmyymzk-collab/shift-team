@@ -11,7 +11,7 @@
 .st-changed{background:var(--ng-bg);color:var(--ng)}
 .t-bar .go{flex:none;color:var(--accent);font-weight:900}
 body.team-mgr > header.top,body.team-mgr > main,body.team-mgr > .dock{display:none!important}
-body.team-mgr .toast{bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}
+body.team-mgr .toast{bottom:calc(104px + env(safe-area-inset-bottom,0px))!important}
 body:not(.team-staff) #tSubmit,body:not(.team-staff) #tSubmitDock{display:none!important}
 body.team-staff #saveImgBtn{display:none!important}
 body.team-staff .outrow .btn.line{flex:1}
@@ -138,3 +138,64 @@ table.t-tbl{width:100%;border-collapse:collapse;font-size:13.5px;margin:0 0 12px
 .t-sh .actions{display:grid;gap:8px;margin-top:14px}
 .t-sh .btn.warn{border-color:var(--ng-edge);color:var(--ng)}
 .t-sh .btn.warn.armed{background:var(--ng-solid);border-color:var(--ng-solid);color:var(--ng-on)}
+
+/* ---------- シフト表（自動で組む） ---------- */
+.m-main.has-dock{padding-bottom:110px}
+.m-dock{z-index:6}
+.m-dock .btn.armed{background:var(--ng-solid);border-color:var(--ng-solid);color:var(--ng-on)}
+.p-state{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 10px;padding:10px 12px;border-radius:14px;font-size:13px;font-weight:700}
+.p-state b{font-weight:900;font-size:14px}
+.p-state.live{background:var(--ok-bg);color:var(--ok)}
+.p-state.changed{background:var(--tri-bg);color:var(--tri)}
+.p-state.none{background:var(--accent-soft);color:var(--ink)}
+.p-insight{margin:0 0 12px;padding:12px 14px;border-radius:14px;background:var(--surface);border-left:5px solid var(--ng-solid);box-shadow:0 3px 0 var(--line2);font-size:13.5px;font-weight:700;line-height:1.6}
+.p-insight b{font-weight:900}
+.p-warn{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:var(--tri-bg);color:var(--tri);font-size:13px;font-weight:700}
+.p-warn .link{margin-left:6px}
+.p-mx td{vertical-align:top}
+.p-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:100%;min-height:46px;padding:5px 2px;border:0;border-radius:10px;font-weight:900;font-size:12.5px;line-height:1.2;background:var(--bg);color:var(--ink)}
+.p-cell span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.p-cell span.tri{color:var(--tri)}
+.p-cell span.tri::before{content:"△";font-size:10px;margin-right:1px}
+.p-cell span.none{color:var(--sub);font-weight:700}
+.p-cell em{font-style:normal;font-size:11px;font-weight:900;color:var(--ng);background:var(--surface);border-radius:99px;padding:1px 6px;margin-top:1px}
+.p-cell.ok{background:var(--ok-bg)}
+.p-cell.warn{background:var(--tri-bg)}
+.p-cell.ng{background:var(--ng-bg)}
+.p-cell.n{background:transparent}
+.p-cell:active{transform:scale(.96)}
+.p-mx th small{white-space:nowrap}
+.p-issues ul{margin:0;padding-left:18px;font-size:13.5px;font-weight:700}
+.p-issues{border-left:5px solid var(--tri-solid)}
+.p-people{margin-top:12px}
+.p-people table{width:100%;border-collapse:collapse;font-size:13.5px}
+.p-people td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+.p-people td.nm{font-weight:900;width:30%}
+.p-people td.c{white-space:nowrap;width:4.5em;font-weight:700}
+.p-people td.c b{font-size:17px;margin-right:2px}
+.p-people td.g small{display:block;color:var(--sub);font-weight:700;font-size:11.5px;margin-top:2px}
+.p-trk{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.p-trk i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+.p-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.p-row .w{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:900}
+.p-row .w.o{background:var(--ok-bg);color:var(--ok)}
+.p-row .w.t{background:var(--tri-bg);color:var(--tri)}
+.p-row .w.x{background:var(--ng-bg);color:var(--ng)}
+.p-row .nm{flex:1;min-width:0;font-weight:900}
+.p-row .nm small{display:block;font-size:12px;color:var(--sub);font-weight:700}
+.p-row.over .nm small{color:var(--ng)}
+.p-row .btn{flex:none}
+
+/* ---------- スタッフ：確定シフト ---------- */
+.t-mine{border:2px solid var(--ok-edge)}
+.t-mine .hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 6px}
+.t-mine h2{margin:0}
+.t-mine .st{padding:2px 10px;border-radius:99px;font-size:12px;font-weight:900}
+.t-mine ul{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:4px;max-height:220px;overflow:auto}
+.t-mine li{display:grid;grid-template-columns:2em 1.6em 1.8em auto 1fr;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:var(--bg);font-weight:700;font-size:14px}
+.t-mine li b{font-size:17px;font-weight:900;text-align:right}
+.t-mine li .wd{color:var(--sub);font-size:12px}
+.t-mine li.sun b,.t-mine li.sun .wd{color:var(--sun)}
+.t-mine li.sat b,.t-mine li.sat .wd{color:var(--sat)}
+.t-mine li .k{width:24px;height:24px;border-radius:50%;background:var(--ok-solid);color:var(--ok-on);display:grid;place-items:center;font-weight:900;font-size:12px}
+.t-mine li .tm{color:var(--sub);font-size:12.5px;text-align:right}

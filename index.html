@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<title>国際ビルシフトチーム</title>
+<title>シフトチーム</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
@@ -60,6 +60,8 @@ input,textarea{font:inherit;color:inherit}
 /* ---------- ヘッダー ---------- */
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:10px 14px 0;border-bottom:1px solid var(--line)}
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.brand small{font-size:11px;font-weight:700;color:var(--sub)}
+.brand #brandName{display:inline-block;max-width:9.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
 .brand{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;line-height:1.25;font-weight:900;letter-spacing:.02em;flex:1;min-width:0}
 .logo{width:30px;height:30px;border-radius:50%;border:2.5px solid var(--accent);color:var(--accent);display:grid;place-items:center;font-size:14px;font-weight:900;transform:rotate(-8deg);flex:none}
 .month{display:flex;align-items:center;gap:4px}
@@ -276,7 +278,7 @@ body[data-tab="out"] .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))
 
 <header class="top">
   <div class="bar">
-    <h1 class="brand"><span class="logo" aria-hidden="true">届</span><span>国際ビル<br>シフトチーム</span></h1>
+    <h1 class="brand"><span class="logo" aria-hidden="true">届</span><span><span id="brandName">シフトチーム</span><br><small id="brandSub">出勤希望</small></span></h1>
     <div class="month">
       <button id="prev" aria-label="前の月">‹</button>
       <div class="label" aria-live="polite"><small id="yearLabel"></small><b id="mLabel"></b></div>
@@ -453,7 +455,7 @@ body[data-tab="out"] .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))
     {k:'workdays',label:'勤務希望曜日',   hint:'入りたい曜日', opts:['月','火','水','木','金','土','日','他'], multi:true},
     {k:'monthly', label:'勤務回数（月）', hint:'1か月あたりの上限', opts:['〜5','〜10','〜15','〜20','〜25'], multi:false},
     {k:'offdays', label:'休み希望曜日',   hint:'休みたい曜日', opts:['月','火','水','木','金','土','日','他'], multi:true},
-    {k:'stores',  label:'他店舗',         hint:'入れる店舗', opts:['自店のみ','西','3','国','大','1','他'], multi:true}
+    {k:'stores',  label:'他店舗',         hint:'ヘルプに入れるか', opts:['自店のみ','他店もOK','他'], multi:false}
   ];
 
   var state = {profile:{name:''}, ym:null, months:{}, ui:{tipClosed:false}};
@@ -462,6 +464,7 @@ body[data-tab="out"] .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))
   var sheetDay = 0, sheetOpenT = 0;
   var celebrated = {};
   var outFmt = 'img';
+  var BRAND = '';   // 参加中の店の名前（なければ空）
 
   /* ---------- 保存 ---------- */
   function load(){
@@ -949,7 +952,7 @@ body[data-tab="out"] .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))
     return out;
   }
   function imgChars(){
-    var t = '国際ビルシフト希望年月日出勤可否メモ全体の未定朝昼夕夜祝いつでも出勤できる人が居なければ出られる月火水木金土日○△×－ABCD()（）氏名未入力', d = cur();
+    var t = BRAND + 'シフト希望年月日出勤可否メモ全体の未定朝昼夕夜祝いつでも出勤できる人が居なければ出られる月火水木金土日○△×－ABCD()（）氏名未入力', d = cur();
     t += (state.profile.name||'');
     Object.keys(d.days).forEach(function(k){ t += d.days[k].n || ''; });
     genRows().forEach(function(r){ t += r[0]+r[1]; });
@@ -984,7 +987,7 @@ body[data-tab="out"] .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))
     /* 見出し */
     g.fillStyle = ACC; g.fillRect(0,0,W,HEAD);
     g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.85)'; g.font = F(700,22);
-    g.fillText('国際ビル シフト希望', P, 40);
+    g.fillText(fitText(g, (BRAND ? BRAND+'　' : '')+'シフト希望', TW), P, 40);
     g.fillStyle = '#ffffff'; g.font = F(900,42);
     g.fillText(state.ym.y+'年'+state.ym.m+'月', P, 92);
     g.font = F(900,32); g.textAlign = 'right';
@@ -1223,6 +1226,13 @@ body[data-tab="out"] .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))
     showTab: showTab,
     toast: toast,
     holidayName: function(y,m,d){ return holidaysOf(y)[m*100+d] || ''; },
+    setBrand: function(name){
+      BRAND = String(name||'').trim();
+      $('brandName').textContent = BRAND || 'シフトチーム';
+      $('brandSub').textContent = BRAND ? 'シフトチーム' : '出勤希望';
+      document.title = BRAND ? BRAND+'｜シフトチーム' : 'シフトチーム';
+      if(!$('p-out').hidden) renderOut();
+    },
     setShiftLabels: function(map){
       SHIFTS.forEach(function(k){
         var v = map && map[k];
@@ -1243,6 +1253,7 @@ body[data-tab="out"] .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="config.js"></script>
 <script src="backend.js"></script>
+<script src="planner.js"></script>
 <script src="team.js"></script>
 </body>
 </html>
